@@ -78,6 +78,14 @@ resource "google_cloudfunctions_function_iam_binding" "binding" {
 ##  }
 #}
 
+resource "google_compute_managed_ssl_certificate" "usermapper-ssl" {
+  name = "my-lb-cert"
+
+  managed {
+    domains = ["usermapperwh.dev.crdb.dev."]
+  }
+}
+
 resource "google_compute_region_network_endpoint_group" "usermapper-function_neg" {
   name                  = "usermapper-neg"
   network_endpoint_type = "SERVERLESS"
@@ -90,12 +98,47 @@ resource "google_compute_region_network_endpoint_group" "usermapper-function_neg
 // Backend service for NEG
 resource "google_compute_backend_service" "usermapper-backend" {
   name      = "backend-default"
-  port_name = "http"
-  protocol  = "HTTP"
+  protocol  = "HTTPS"
   backend {
     group = google_compute_region_network_endpoint_group.usermapper-function_neg.id
   }
 }
+
+resource "google_compute_url_map" "usermapperwd-dev-crdb-dev" {
+  name            = "usermapper-url-map-target-proxy"
+  description     = "url map for usermapper"
+  default_service = google_compute_backend_service.usermapper-backend.id
+
+  host_rule {
+    hosts        = ["usermapperwh.dev.crdb.dev"]
+    path_matcher = "allpaths"
+  }
+
+  path_matcher {
+    name            = "allpaths"
+    default_service = google_compute_backend_service.usermapper-backend.id
+
+    path_rule {
+      paths   = ["/*"]
+      service = google_compute_backend_service.usermapper-backend.id
+    }
+  }
+}
+
+resource "google_compute_target_https_proxy" "usermapper-proxy" {
+  name             = "usermapper-target-proxy"
+  description      = "https proxy for usermapperwh.dev.crdb.dev"
+  url_map          = google_compute_url_map.usermapperwd-dev-crdb-dev.id
+  ssl_certificates = [google_compute_managed_ssl_certificate]
+}
+
+resource "google_compute_global_forwarding_rule" "usermapper-forward-https" {
+  name       = "usermapper-https"
+  ip_address = google_compute_global_address
+  target     = google_compute_target_https_proxy.usermapper-proxy.id
+  port_range = 443
+}
+
 #
 #resource "google_compute_url_map" "usermapper-url-map" {
 #  name            = "url-map-target-proxy"
@@ -123,40 +166,40 @@ resource "google_compute_backend_service" "usermapper-backend" {
 #  description = "a description"
 #  url_map     = google_compute_url_map.usermapper-url-map.id
 #}
-
-module "lb-http" {
-  source            = "GoogleCloudPlatform/lb-http/google//modules/serverless_negs"
-  project           = local.project_id
-  name              = "my-lb"
-  managed_ssl_certificate_domains = ["usermapperwh.dev.crdb.dev"]
-  ssl                             = true
-  https_redirect                  = true
-
-  backends = {
-    default = {
-      # List your serverless NEGs, VMs, or buckets as backends
-      groups = [
-        {
-          group = google_compute_region_network_endpoint_group.usermapper-function_neg.id
-        }
-      ]
-
-      enable_cdn = false
-
-      log_config = {
-        enable      = true
-        sample_rate = 1.0
-      }
-
-      iap_config = {
-        enable               = false
-        oauth2_client_id     = null
-        oauth2_client_secret = null
-      }
-
-      description             = null
-      custom_request_headers  = null
-      security_policy         = null
-    }
-  }
-}
+#
+#module "lb-http" {
+#  source            = "GoogleCloudPlatform/lb-http/google"
+#  project           = local.project_id
+#  name              = "my-lb"
+#  managed_ssl_certificate_domains = ["usermapperwh.dev.crdb.dev"]
+#  ssl                             = true
+#  https_redirect                  = true
+#
+#  backends = {
+#    default = {
+#      # List your serverless NEGs, VMs, or buckets as backends
+#      groups = [
+#        {
+#          group = google_compute_region_network_endpoint_group.usermapper-function_neg.id
+#        }
+#      ]
+#
+#      enable_cdn = false
+#
+#      log_config = {
+#        enable      = true
+#        sample_rate = 1.0
+#      }
+#
+#      iap_config = {
+#        enable               = false
+#        oauth2_client_id     = null
+#        oauth2_client_secret = null
+#      }
+#
+#      description             = null
+#      custom_request_headers  = null
+#      security_policy         = null
+#    }
+#  }
+#}
