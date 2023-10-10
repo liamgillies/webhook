@@ -86,6 +86,11 @@ resource "google_compute_managed_ssl_certificate" "usermapper-ssl" {
   }
 }
 
+# IP address for wiki.crdb.io.
+resource "google_compute_global_address" "usermapper-address" {
+  name = "usermapperwh"
+}
+
 resource "google_compute_region_network_endpoint_group" "usermapper-function_neg" {
   name                  = "usermapper-neg"
   network_endpoint_type = "SERVERLESS"
@@ -129,12 +134,12 @@ resource "google_compute_target_https_proxy" "usermapper-proxy" {
   name             = "usermapper-target-proxy"
   description      = "https proxy for usermapperwh.dev.crdb.dev"
   url_map          = google_compute_url_map.usermapperwd-dev-crdb-dev.id
-  ssl_certificates = [google_compute_managed_ssl_certificate]
+  ssl_certificates = [google_compute_managed_ssl_certificate.usermapper-ssl.name]
 }
 
 resource "google_compute_global_forwarding_rule" "usermapper-forward-https" {
   name       = "usermapper-https"
-  ip_address = google_compute_global_address
+  ip_address = google_compute_global_address.usermapper-address.name
   target     = google_compute_target_https_proxy.usermapper-proxy.id
   port_range = 443
 }
